@@ -23,6 +23,9 @@ const dockerHeaderLength = 8
 // https://github.com/moby/moby/blob/master/daemon/logger/copier.go#L19-L22
 const dockerBufferSize = 16 * 1024
 
+// Escaped CRLF, used for determine empty messages
+var escapedCRLF = []byte{'\\', 'r', '\\', 'n'}
+
 // dockerParser is the parser for stdout/stderr docker logs
 var dockerParser *parser
 
@@ -65,10 +68,11 @@ func (p *parser) Parse(msg []byte) (*message.Message, error) {
 
 	// timestamp goes till first space
 	idx := bytes.Index(msg, []byte{' '})
-	if idx == -1 {
+	if idx == -1 || isEmptyMessage(msg[idx+1:]) {
 		// Nothing after the timestamp: empty message
 		return &message.Message{}, nil
 	}
+
 	parsedMsg := message.NewMessage(msg[idx+1:], nil, status)
 	parsedMsg.Timestamp = string(msg[:idx])
 	return parsedMsg, nil
@@ -138,4 +142,19 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func isEmptyMessage(content []byte) bool {
+	contentLen := len(content)
+
+	if contentLen == 2 && content[0] == '\\' {
+		switch content[1] {
+		case 'n', 'r':
+			return true
+		}
+	} else if bytes.Equal(content, escapedCRLF) {
+		return true
+	}
+
+	return false
 }
